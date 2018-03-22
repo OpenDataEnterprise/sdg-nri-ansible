@@ -1,0 +1,99 @@
+- name: Download Node.js repo setup script
+  get_url:
+    url: https://deb.nodesource.com/setup_9.x
+    dest: /tmp/setup_9.x
+    mode: 0755
+
+- name: Execute Node.js repo setup script
+  shell: /tmp/setup_9.x
+
+- name: Add Yarn repository GPG key
+  apt_key:
+    url: https://dl.yarnpkg.com/debian/pubkey.gpg
+    state: present
+
+- name: Add Yarn repository
+  apt_repository:
+    repo: deb https://dl.yarnpkg.com/debian/ stable main
+    state: present
+
+- name: Install system packages
+  apt:
+    name: "{{ item }}"
+    update_cache: yes
+  with_items:
+    - build-essential
+    - git
+    - nginx
+    - nodejs
+    - yarn
+
+- name: Install PM2
+  npm:
+    name: pm2
+    global: yes
+    production: yes
+
+- name: Create project group
+  group:
+    name: "{{ sdg_api_group }}"
+
+- name: Create project user
+  user:
+    name: "{{ sdg_api_user }}"
+    group: "{{ sdg_api_group }}"
+
+- name: Create project directory
+  file:
+    path: "{{ sdg_api_root }}"
+    state: directory
+    owner: "{{ sdg_api_user }}"
+    group: "{{ sdg_api_group }}"
+    mode: 0755
+    recurse: yes
+
+- name: Retrieve application code
+  git:
+    repo: 'https://github.com/OpenDataEnterprise/sdg-nri-api.git'
+    dest: "{{ sdg_api_root }}"
+    force: yes
+
+- name: Download application configuration
+  command: "aws s3 cp s3://{{ sdg_api_configuration_bucket }}/{{ sdg_api_configuration_filename }} {{ sdg_api_root }}"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ sdg_api_aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ sdg_api_aws_secret_key }}"
+  args:
+    creates: "{{ sdg_api_root }}/{{ sdg_api_configuration_filename }}"
+
+- name: Set application configuration file permissions
+  file:
+    path: "{{ sdg_api_root }}/{{ sdg_api_configuration_filename }}"
+    owner: "{{ sdg_api_user }}"
+    group: "{{ sdg_api_group }}"
+    mode: 0664
+
+- name: Install Node dependencies through Yarn
+  command: yarn install
+  args:
+    chdir: "{{ sdg_api_root }}"
+
+- name: Start application under PM2
+  command: "pm2 start ./bin/www"
+  args:
+    chdir: "{{ sdg_api_root }}"
+  become: yes
+  become_user: "{{ sdg_api_user }}"
+
+- name: Create PM2 service
+  command: "pm2 startup systemd -u {{ sdg_api_user }} --hp /home/{{ sdg_api_user }}"
+  environment:
+    PATH: "{{ ansible_env.PATH }}:/usr/bin"
+  become: yes
+  become_method: sudo
+
+- name: Compile Nginx configuration for SDG NRI API
+  template:
+    src: sdg-nri-api.conf.j2
+    dest: /etc/nginx/sites-available/default.conf
+  notify: Restart Nginx

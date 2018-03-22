@@ -1,0 +1,14 @@
+server {
+    listen {{ sdg_api_port }};
+    server_name {{ sdg_api_hostname }};
+
+    # Proxy to PM2 server.
+    location / {
+        proxy_pass http://localhost:{{ sdg_api_pm2_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}

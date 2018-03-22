@@ -1,0 +1,63 @@
+- name: Workaround for requiring apt-transport-https when running apt-get update
+  file:
+    force: yes
+    src: /usr/lib/apt/methods/http
+    dest: /usr/lib/apt/methods/https
+    owner: root
+    group: root
+    state: link
+
+- name: Add backports repository
+  apt_repository:
+    repo: deb http://ftp.debian.org/debian jessie-backports main
+    state: present
+  when: ansible_distribution == "Debian"
+
+- name: Install system packages
+  apt:
+    name: "{{ item }}"
+    update_cache: yes
+  with_items:
+    - apt-transport-https
+    - nginx
+    - ntp
+    - python3-pip
+
+- name: Install AWS command-line tools
+  pip:
+    name: "{{ item }}"
+    executable: pip3
+  with_items:
+    - awscli
+  tags:
+    - aws
+
+- name: Install Certbot for Let's Encrypt certificates
+  apt:
+    name: certbot
+  when: ansible_distribution == "Debian"
+  tags:
+    - production
+    - ssl
+
+- name: Add Certbot PPA
+  apt_repository:
+    repo: ppa:certbot/certbot
+  when: ansible_distribution == "Ubuntu"
+
+- name: Install Certbot for Let's Encrypt certificates
+  apt:
+    name: python-certbot-nginx
+  when: ansible_distribution == "Ubuntu"
+  tags:
+    - production
+    - ssl
+
+- name: Add cronjob for SSL certificate renewal
+  cron:
+    name: letsencrypt_renewal
+    special_time: weekly
+    job: "certbot renew && service nginx reload"
+  tags:
+    - production
+    - ssl

@@ -1,0 +1,30 @@
+server {
+    server_name {{ jenkins_hostname }};
+
+    location / {
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-NginX-Proxy true;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_redirect off;
+    }
+
+    listen [::]:443 ssl;
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/{{ jenkins_hostname }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ jenkins_hostname }}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+
+server {
+    if ($host = {{ jenkins_hostname }}) {
+        return 301 https://$host$request_uri;
+    }
+
+    listen 80;
+    listen [::]:80;
+    server_name {{ jenkins_hostname }};
+    return 404;
+}

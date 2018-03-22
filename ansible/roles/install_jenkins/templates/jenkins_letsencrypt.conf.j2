@@ -1,0 +1,10 @@
+server {
+    listen 80;
+    server_name {{ jenkins_hostname }};
+
+    location '/.well-known/acme-challenge' {
+        default_type "text/plain";
+        root /var/www/letsencrypt;
+        allow all;
+    }
+}

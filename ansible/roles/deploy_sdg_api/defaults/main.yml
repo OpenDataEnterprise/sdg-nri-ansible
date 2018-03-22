@@ -1,0 +1,8 @@
+sdg_api_user: "sdg"
+sdg_api_group: "sdg"
+sdg_api_root: "/srv/sdg-nri-api"
+sdg_api_configuration_bucket: ""
+sdg_api_configuration_filename: ".env"
+sdg_api_hostname: "localhost"
+sdg_api_port: 80
+sdg_api_pm2_port: 3000

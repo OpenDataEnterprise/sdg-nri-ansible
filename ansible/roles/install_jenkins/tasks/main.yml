@@ -1,0 +1,201 @@
+---
+- name: Add backports repository
+  apt_repository:
+    repo: deb http://ftp.debian.org/debian jessie-backports main
+  when: ansible_distribution == "Debian"
+  tags:
+    - installation
+
+- name: Add Jenkins repository
+  apt_repository:
+    repo: deb http://pkg.jenkins-ci.org/debian binary/
+  when: ansible_distribution == "Debian"
+  tags:
+    - installation
+    - jenkins
+
+- name: Add Jenkins PPA
+  apt_repository:
+    repo: ppa:webupd8team/java
+  when: ansible_distribution == "Ubuntu"
+
+- name: Add Jenkins repository public GPG key.
+  apt_key:
+    url: http://pkg.jenkins-ci.org/debian/jenkins-ci.org.key
+  tags:
+    - installation
+    - jenkins
+
+- name: Install Java packages
+  apt:
+    name: "{{ item }}"
+    default_release: jessie-backports
+    update_cache: yes
+  with_items:
+    - openjdk-8-jre-headless
+    - ca-certificates-java
+  when: ansible_distribution == "Debian"
+  tags:
+    - installation
+    - jenkins
+
+- name: Accept license non-iteractively
+  shell: "echo oracle-java8-installer shared/accepted-oracle-license-v1-1 select true | sudo /usr/bin/debconf-set-selections"
+  when: ansible_distribution == "Ubuntu"
+
+- name: Install Java packages
+  apt:
+    name: "{{ item }}"
+    default_release: jessie-backports
+    update_cache: yes
+  with_items:
+    - oracle-java8-installer
+    - oracle-java8-set-default
+  when: ansible_distribution == "Ubuntu"
+  tags:
+    - installation
+    - jenkins
+
+- name: Install Jenkins
+  apt:
+    name: "{{ item }}"
+    update_cache: yes
+  with_items:
+    - jenkins
+  notify:
+    - Start Jenkins
+  tags:
+    - installation
+    - jenkins
+
+- name: Add Jenkins user to sudoers
+  lineinfile:
+    regexp: "^%jenkins"
+    insertafter: "^# %sudo"
+    line: "%jenkins	ALL=(ALL:ALL) NOPASSWD: ALL"
+    dest: /etc/sudoers
+    backup: yes
+    state: present
+  tags:
+    - configuration
+    - jenkins
+
+- name: Retrieve Jenkins home directory
+  shell: "getent passwd jenkins | cut -d: -f6"
+  register: jenkins_home
+  tags:
+    - configuration
+    - jenkins
+
+- name: Wait for Jenkins to start up before proceeding
+  shell: "curl -D - --silent --max-time 5 http://localhost:8080/cli/"
+  register: result
+  until: (result.stdout.find("403 Forbidden") != -1) or (result.stdout.find("200 OK") != -1) and (result.stdout.find("Please wait while") == -1)
+  retries: "{{ jenkins_connection_retries }}"
+  delay: "{{ jenkins_connection_delay }}"
+  changed_when: false
+  check_mode: no
+
+- name: Download Jenkins command line utility
+  get_url:
+    url: http://localhost:8080/jnlpJars/jenkins-cli.jar
+    dest: "{{ jenkins_home.stdout }}"
+    owner: jenkins
+    group: jenkins
+    mode: 0644
+  become: yes
+  become_user: jenkins
+
+- name: Remove Jenkins security init scripts after first startup
+  file:
+    path: "{{ jenkins_home.stdout }}/init.groovy.d/basic-security.groovy"
+    state: absent
+
+- name: Retrieve latest Jenkins configuration backup from S3
+  shell: "aws s3 ls s3://{{ jenkins_backup_s3_bucket }} --recursive | sort | tail -n 1 | awk '{print $4}'"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ jenkins_aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ jenkins_aws_secret_key }}"
+  register: jenkins_backup_filename
+  tags:
+    - configuration
+    - jenkins
+
+- name: Download latest Jenkins configuration backup from S3
+  shell: "aws s3 cp s3://{{ jenkins_backup_s3_bucket }}/{{ jenkins_backup_filename.stdout }} /tmp"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ jenkins_aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ jenkins_aws_secret_key }}"
+  args:
+    creates: "/tmp/{{ jenkins_backup_filename.stdout }}"
+  tags:
+    - configuration
+    - jenkins
+
+- name: Unarchive Jenkins backup
+  unarchive:
+    remote_src: yes
+    src: "/tmp/{{ jenkins_backup_filename.stdout }}"
+    dest: "{{ jenkins_home.stdout }}"
+    owner: jenkins
+    group: jenkins
+    mode: 0755
+  tags:
+    - configuration
+    - jenkins
+
+- name: Get list of Jenkins plugins to install
+  command: "cat {{ jenkins_home.stdout }}/plugins.txt"
+  register: jenkins_plugins
+
+- name: Install Jenkins plugins
+  jenkins_plugin:
+    name: "{{ item }}"
+    url_username: "{{ jenkins_admin_username }}"
+    url_password: "{{ jenkins_admin_password }}"
+  with_items: "{{ jenkins_plugins.stdout_lines }}"
+  notify: Restart Jenkins
+
+- name: Create Let's Encrypt directory
+  file:
+    name: "{{ letsencrypt_root }}"
+    state: directory
+
+- name: Compile Let's Encrypt Nginx testing configuration for Jenkins
+  template:
+    src: jenkins_letsencrypt.conf.j2
+    dest: /etc/nginx/sites-available/jenkins
+  notify: Restart Nginx
+  tags:
+    - configuration
+    - jenkins
+    - production
+
+- name: Enable Let's Encrypt site for Jenkins
+  file:
+    src: /etc/nginx/sites-available/jenkins
+    dest: /etc/nginx/sites-enabled/jenkins
+    state: link
+  notify: Restart Nginx
+
+- name: Set up SSL certificate
+  shell: "certbot certonly -n --webroot -w {{ letsencrypt_root }} -m {{ letsencrypt_email }} --agree-tos -d {{ jenkins_hostname }}"
+  args:
+    creates: "/etc/letsencrypt/live/{{ jenkins_hostname }}"
+  tags:
+    - configuration
+    - jenkins
+    - production
+    - ssl
+
+- name: Compile Nginx configuration for Jenkins
+  template:
+    src: jenkins.conf.j2
+    dest: /etc/nginx/sites-available/jenkins
+  notify: Restart Nginx
+  tags:
+    - configuration
+    - jenkins
+    - production
+    - ssl
+  notify: Restart Nginx
