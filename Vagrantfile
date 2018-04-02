@@ -64,8 +64,7 @@ Vagrant.configure("2") do |config|
 
   # Enable provisioning with Ansible.
   config.vm.provision "ansible" do |ansible|
-    #ansible.playbook = "ansible/sdg_nri_api_playbook.yml"
-    ansible.playbook = "ansible/jenkins_playbook.yml"
+    ansible.playbook = "ansible/sdg_nri_api_playbook.yml"
     ansible.inventory_path = "ansible/inventories/vagrant/hosts"
     ansible.limit = "all"
     ansible.skip_tags = ["production"]
