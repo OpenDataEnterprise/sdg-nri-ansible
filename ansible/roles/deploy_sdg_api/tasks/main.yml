@@ -41,6 +41,7 @@
 - name: Create project user
   user:
     name: "{{ sdg_api_user }}"
+    shell: /bin/bash
     group: "{{ sdg_api_group }}"
 
 - name: Create project directory
@@ -51,6 +52,15 @@
     group: "{{ sdg_api_group }}"
     mode: 0755
     recurse: yes
+
+- name: Copy authorized SSH keys
+  copy:
+    src: "authorized_keys"
+    dest: "/home/{{ sdg_api_user }}/.ssh/authorized_keys"
+    user: "{{ sdg_api_user }}"
+    group: "{{ sdg_api_group }}"
+    mode: 0600
+    directory_mode: 0700
 
 - name: Retrieve application code
   git:
