@@ -1,16 +1,18 @@
 ---
-- name: Add backports repository
-  apt_repository:
-    repo: deb http://ftp.debian.org/debian jessie-backports main
-  when: ansible_distribution == "Debian"
+- name: Add Jenkins repository public GPG key.
+  apt_key:
+    url: http://pkg.jenkins-ci.org/debian/jenkins-ci.org.key
   tags:
+    - always
     - installation
+    - jenkins
 
 - name: Add Jenkins repository
   apt_repository:
     repo: deb http://pkg.jenkins-ci.org/debian binary/
   when: ansible_distribution == "Debian"
   tags:
+    - always
     - installation
     - jenkins
 
@@ -18,30 +20,45 @@
   apt_repository:
     repo: ppa:webupd8team/java
   when: ansible_distribution == "Ubuntu"
-
-- name: Add Jenkins repository public GPG key.
-  apt_key:
-    url: http://pkg.jenkins-ci.org/debian/jenkins-ci.org.key
   tags:
+    - always
     - installation
     - jenkins
 
-- name: Install Java packages
+- name: Install Java packages from Debian Jessie backports repository
   apt:
     name: "{{ item }}"
     default_release: jessie-backports
     update_cache: yes
   with_items:
+    - libcups2
     - openjdk-8-jre-headless
     - ca-certificates-java
-  when: ansible_distribution == "Debian"
+  when: ansible_distribution == "Debian" and ansible_distribution_release == 'jessie'
   tags:
+    - always
     - installation
-    - jenkins
+
+- name: Install Java packages from Debian Stretch backports repository
+  apt:
+    name: "{{ item }}"
+    default_release: stretch-backports
+    update_cache: yes
+  with_items:
+    - libcups2
+    - openjdk-8-jre-headless
+    - ca-certificates-java
+  when: ansible_distribution == "Debian" and ansible_distribution_release == 'stretch'
+  tags:
+    - always
+    - installation
 
 - name: Accept license non-iteractively
   shell: "echo oracle-java8-installer shared/accepted-oracle-license-v1-1 select true | sudo /usr/bin/debconf-set-selections"
   when: ansible_distribution == "Ubuntu"
+  tags:
+    - always
+    - installation
 
 - name: Install Java packages
   apt:
@@ -53,8 +70,8 @@
     - oracle-java8-set-default
   when: ansible_distribution == "Ubuntu"
   tags:
+    - always
     - installation
-    - jenkins
 
 - name: Install Jenkins
   apt:
@@ -65,6 +82,7 @@
   notify:
     - Start Jenkins
   tags:
+    - always
     - installation
     - jenkins
 
@@ -77,6 +95,7 @@
     backup: yes
     state: present
   tags:
+    - always
     - configuration
     - jenkins
 
@@ -84,6 +103,7 @@
   shell: "getent passwd jenkins | cut -d: -f6"
   register: jenkins_home
   tags:
+    - always
     - configuration
     - jenkins
 
@@ -95,6 +115,8 @@
   delay: "{{ jenkins_connection_delay }}"
   changed_when: false
   check_mode: no
+  tags:
+    - always
 
 - name: Download Jenkins command line utility
   get_url:
@@ -105,30 +127,30 @@
     mode: 0644
   become: yes
   become_user: jenkins
+  tags:
+    - always
 
 - name: Remove Jenkins security init scripts after first startup
   file:
     path: "{{ jenkins_home.stdout }}/init.groovy.d/basic-security.groovy"
     state: absent
+  tags:
+    - always
 
-- name: Retrieve latest Jenkins configuration backup from S3
-  shell: "aws s3 ls s3://{{ jenkins_backup_s3_bucket }} --recursive | sort | tail -n 1 | awk '{print $4}'"
-  environment:
-    AWS_ACCESS_KEY_ID: "{{ jenkins_aws_access_key }}"
-    AWS_SECRET_ACCESS_KEY: "{{ jenkins_aws_secret_key }}"
+- name: Retrieve filename of latest Jenkins configuration backup from S3
+  shell: "filepath=$(aws s3 ls s3://open-data-enterprise/jenkins/backup --recursive | sort | tail -n 1 | awk '{print $4}') && echo ${filepath##*/}"
   register: jenkins_backup_filename
   tags:
+    - always
     - configuration
     - jenkins
 
 - name: Download latest Jenkins configuration backup from S3
   shell: "aws s3 cp s3://{{ jenkins_backup_s3_bucket }}/{{ jenkins_backup_filename.stdout }} /tmp"
-  environment:
-    AWS_ACCESS_KEY_ID: "{{ jenkins_aws_access_key }}"
-    AWS_SECRET_ACCESS_KEY: "{{ jenkins_aws_secret_key }}"
   args:
     creates: "/tmp/{{ jenkins_backup_filename.stdout }}"
   tags:
+    - always
     - configuration
     - jenkins
 
@@ -141,12 +163,17 @@
     group: jenkins
     mode: 0755
   tags:
+    - always
     - configuration
     - jenkins
 
 - name: Get list of Jenkins plugins to install
   command: "cat {{ jenkins_home.stdout }}/plugins.txt"
   register: jenkins_plugins
+  tags:
+    - always
+    - configuration
+    - jenkins
 
 - name: Install Jenkins plugins
   jenkins_plugin:
@@ -155,11 +182,21 @@
     url_password: "{{ jenkins_admin_password }}"
   with_items: "{{ jenkins_plugins.stdout_lines }}"
   notify: Restart Jenkins
+  tags:
+    - always
+    - configuration
+    - jenkins
 
 - name: Create Let's Encrypt directory
   file:
     name: "{{ letsencrypt_root }}"
     state: directory
+  tags:
+    - never
+    - configuration
+    - jenkins
+    - production
+    - ssl-cert
 
 - name: Compile Let's Encrypt Nginx testing configuration for Jenkins
   template:
@@ -167,35 +204,44 @@
     dest: /etc/nginx/sites-available/jenkins
   notify: Restart Nginx
   tags:
+    - never
     - configuration
     - jenkins
     - production
-
-- name: Enable Let's Encrypt site for Jenkins
-  file:
-    src: /etc/nginx/sites-available/jenkins
-    dest: /etc/nginx/sites-enabled/jenkins
-    state: link
-  notify: Restart Nginx
+    - ssl
+    - ssl-cert
 
 - name: Set up SSL certificate
   shell: "certbot certonly -n --webroot -w {{ letsencrypt_root }} -m {{ letsencrypt_email }} --agree-tos -d {{ jenkins_hostname }}"
   args:
     creates: "/etc/letsencrypt/live/{{ jenkins_hostname }}"
   tags:
+    - never
     - configuration
     - jenkins
     - production
     - ssl
+    - ssl-cert
 
 - name: Compile Nginx configuration for Jenkins
   template:
     src: jenkins.conf.j2
     dest: /etc/nginx/sites-available/jenkins
-  notify: Restart Nginx
   tags:
+    - never
     - configuration
     - jenkins
     - production
     - ssl
+
+- name: Enable site for Jenkins
+  file:
+    src: /etc/nginx/sites-available/jenkins
+    dest: /etc/nginx/sites-enabled/jenkins
+    state: link
   notify: Restart Nginx
+  tags:
+    - never
+    - configuration
+    - jenkins
+    - production

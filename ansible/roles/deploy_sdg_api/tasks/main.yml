@@ -1,21 +1,30 @@
+---
 - name: Download Node.js repo setup script
   get_url:
     url: https://deb.nodesource.com/setup_9.x
     dest: /tmp/setup_9.x
     mode: 0755
+  tags:
+    - always
 
 - name: Execute Node.js repo setup script
   shell: /tmp/setup_9.x
+  tags:
+    - always
 
 - name: Add Yarn repository GPG key
   apt_key:
     url: https://dl.yarnpkg.com/debian/pubkey.gpg
     state: present
+  tags:
+    - always
 
 - name: Add Yarn repository
   apt_repository:
     repo: deb https://dl.yarnpkg.com/debian/ stable main
     state: present
+  tags:
+    - always
 
 - name: Install system packages
   apt:
@@ -27,22 +36,30 @@
     - nginx
     - nodejs
     - yarn
+  tags:
+    - always
 
 - name: Install PM2
   npm:
     name: pm2
     global: yes
     production: yes
+  tags:
+    - always
 
 - name: Create project group
   group:
     name: "{{ sdg_api_group }}"
+  tags:
+    - always
 
 - name: Create project user
   user:
     name: "{{ sdg_api_user }}"
     shell: /bin/bash
     group: "{{ sdg_api_group }}"
+  tags:
+    - always
 
 - name: Create project directory
   file:
@@ -52,21 +69,36 @@
     group: "{{ sdg_api_group }}"
     mode: 0755
     recurse: yes
+  tags:
+    - always
+
+- name: Create SSH directory
+  file:
+    path: "/home/{{ sdg_api_user }}/.ssh"
+    state: directory
+    owner: "{{ sdg_api_user }}"
+    group: "{{ sdg_api_group }}"
+    mode: 0700
+  tags:
+    - always
 
 - name: Copy authorized SSH keys
   copy:
     src: "authorized_keys"
     dest: "/home/{{ sdg_api_user }}/.ssh/authorized_keys"
-    user: "{{ sdg_api_user }}"
+    owner: "{{ sdg_api_user }}"
     group: "{{ sdg_api_group }}"
     mode: 0600
-    directory_mode: 0700
+  tags:
+    - always
 
 - name: Retrieve application code
   git:
     repo: 'https://github.com/OpenDataEnterprise/sdg-nri-api.git'
     dest: "{{ sdg_api_root }}"
     force: yes
+  tags:
+    - always
 
 - name: Download application configuration
   command: "aws s3 cp s3://{{ sdg_api_configuration_bucket }}/{{ sdg_api_configuration_filename }} {{ sdg_api_root }}"
@@ -75,6 +107,8 @@
     AWS_SECRET_ACCESS_KEY: "{{ sdg_api_aws_secret_key }}"
   args:
     creates: "{{ sdg_api_root }}/{{ sdg_api_configuration_filename }}"
+  tags:
+    - always
 
 - name: Set application configuration file permissions
   file:
@@ -82,18 +116,24 @@
     owner: "{{ sdg_api_user }}"
     group: "{{ sdg_api_group }}"
     mode: 0664
+  tags:
+    - always
 
 - name: Install Node dependencies through Yarn
   command: yarn install
   args:
     chdir: "{{ sdg_api_root }}"
+  tags:
+    - always
 
 - name: Start application under PM2
-  command: "pm2 start ./bin/www"
+  command: "pm2 start -f ./bin/www"
   args:
     chdir: "{{ sdg_api_root }}"
   become: yes
   become_user: "{{ sdg_api_user }}"
+  tags:
+    - always
 
 - name: Create PM2 service
   command: "pm2 startup systemd -u {{ sdg_api_user }} --hp /home/{{ sdg_api_user }}"
@@ -101,9 +141,64 @@
     PATH: "{{ ansible_env.PATH }}:/usr/bin"
   become: yes
   become_method: sudo
+  tags:
+    - always
+
+- name: Create Let's Encrypt directory
+  file:
+    name: "{{ letsencrypt_root }}"
+    state: directory
+  tags:
+    - never
+    - production
+    - ssl
+    - ssl-cert
+
+- name: Compile Let's Encrypt Nginx testing configuration
+  template:
+    src: sdg-nri-api-letsencrypt.conf.j2
+    dest: /etc/nginx/sites-available/default
+  notify: Restart Nginx
+  tags:
+    - never
+    - production
+    - ssl
+    - ssl-cert
+
+- name: Set up SSL certificate
+  shell: "certbot certonly -n --webroot -w {{ letsencrypt_root }} -m {{ letsencrypt_email }} --agree-tos -d {{ sdg_api_hostname }}"
+  args:
+    creates: "/etc/letsencrypt/live/{{ sdg_api_hostname }}"
+  when: production is defined and production == true
+  tags:
+    - never
+    - production
+    - ssl
+    - ssl-cert
 
 - name: Compile Nginx configuration for SDG NRI API
   template:
     src: sdg-nri-api.conf.j2
-    dest: /etc/nginx/sites-available/default.conf
+    dest: /etc/nginx/sites-available/default
+  when: production == false or production is not defined
+  tags:
+    - always
+
+- name: Compile Nginx configuration for SDG NRI API
+  template:
+    src: sdg-nri-api-ssl.conf.j2
+    dest: /etc/nginx/sites-available/default
+  when: production is defined and production == true
+  tags:
+    - never
+    - production
+    - ssl
+
+- name: Enable API site
+  file:
+    src: /etc/nginx/sites-available/default
+    dest: /etc/nginx/sites-enabled/default
+    state: link
   notify: Restart Nginx
+  tags:
+    - always

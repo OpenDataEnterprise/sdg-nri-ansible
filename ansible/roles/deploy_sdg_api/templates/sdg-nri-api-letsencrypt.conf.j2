@@ -1,0 +1,10 @@
+server {
+    listen 80;
+    server_name {{ sdg_api_hostname }};
+
+    location '/.well-known/acme-challenge' {
+        default_type "text/plain";
+        root /var/www/letsencrypt;
+        allow all;
+    }
+}
