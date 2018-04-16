@@ -4,5 +4,6 @@
   become_method: sudo
 
   roles:
+    - role: setup_backports
     - role: common
     - role: deploy_sdg_api
