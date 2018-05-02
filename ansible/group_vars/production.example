@@ -1,0 +1,14 @@
+---
+production: true
+project_root: "/srv/sdg-nri-api"
+project_user: "sdg"
+project_group: "sdg"
+sdg_api_configuration_bucket: ""
+sdg_api_configuration_filename: ".env"
+sdg_api_hostname: "api.sdgreporting.org"
+jenkins_hostname: "jenkins-ci.sdgreporting.org"
+jenkins_admin_username: ""
+jenkins_admin_password: ""
+jenkins_backup_s3_bucket: ""
+letsencrypt_root: "/var/www/letsencrypt"
+letsencrypt_email: ""
