@@ -1,6 +1,6 @@
 # SDG National Reporting Initiative Ansible Scripts
 
-This repository contains the [Ansible](https://www.ansible.com/) scripts for the SDG National Reporting Intiative. We use Ansible to help automate the provisioning and restoration of technical infrastructure.
+This repository contains the [Ansible](https://www.ansible.com/) scripts for the SDG National Reporting Intiative. We use Ansible to help automate the provisioning and restoration of technical infrastructure. These scripts also serve as a form of documentation on how to set up various infrastructure assets for the project.
 
 ## Requirements
 
@@ -10,9 +10,22 @@ You'll need to run the playbooks on a system with [Ansible installed](https://do
 
 `ansible-playbook <playbook_filepath> -i <inventory_filepath>`
 
-For example, to deploy the API to a configured production environment:
+This project makes heavy use of [tags](https://docs.ansible.com/ansible/latest/user_guide/playbooks_tags.html) to control which tasks are run. Of particular note should be the `always` and `never` tags:
 
-`ansible-playbook ansible/deploy_sdg_api -i ansible/inventories/production`
+- Tasks tagged `always` will always run unless one of the task's other tags is explicitly skipped.
+- Tasks tagged `never` will only run if one of the task's other is explicitly stated.
+
+A typical usage is to set up a new API machine to production while skipping SSL certificate registration with Let's Encrypt:
+
+`ansible-playbook ansible/deploy_sdg_api -i ansible/inventories/production --tags production --skip-tags ssl-cert`
+
+## Variables
+
+Many of the tasks require certain variables to be filled out. To see which values you need to provide, check `defaults/main.yml` for each role; some of these variables will have default values, and others will be empty, requiring you to provide a value. You can fill out the default values, but it is better to copy these values into a dedicated variable file. There are many ways to provide the variables for running tasks, but the best way is to use [group variables](https://docs.ansible.com/ansible/2.3/intro_inventory.html#group-variables).
+
+In the `group_vars` directory, simply create an extensionless file named after the inventory you wish to provide variables for. For example, if I wanted to provide variables when running against the `production` inventory, I would create the file `group_vars/production` and define my variables in there.
+
+You can provide variables that are available for every inventory by defining them in `group_vars/all`.
 
 ## Testing with Vagrant
 
