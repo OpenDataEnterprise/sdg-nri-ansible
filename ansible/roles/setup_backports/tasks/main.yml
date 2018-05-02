@@ -1,16 +1,16 @@
 ---
-- name: Add Debian Jessie backports repository
+- name: Add Debian 8 backports repository
   apt_repository:
     repo: deb http://ftp.debian.org/debian jessie-backports main
     state: present
-  when: ansible_distribution == 'Debian' and ansible_distribution_release == 'jessie'
+  when: ansible_distribution == 'Debian' and ansible_distribution_version == '8'
   tags:
     - always
 
-- name: Add Debian Stretch backports repository
+- name: Add Debian 9 backports repository
   apt_repository:
     repo: deb http://ftp.debian.org/debian stretch-backports main
     state: present
-  when: ansible_distribution == 'Debian' and ansible_distribution_release == 'stretch'
+  when: ansible_distribution == 'Debian' and ansible_distribution_version == '9'
   tags:
     - always

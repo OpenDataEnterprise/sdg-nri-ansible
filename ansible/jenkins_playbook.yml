@@ -7,3 +7,4 @@
     - role: setup_backports
     - role: common
     - role: install_jenkins
+    - role: install_postgres

@@ -1,8 +1,6 @@
 jenkins_hostname: "localhost"
 jenkins_connection_retries: 24
 jenkins_connection_delay: 5
-jenkins_aws_access_key: ""
-jenkins_aws_secret_key: ""
 jenkins_admin_username: ""
 jenkins_admin_password: ""
 jenkins_backup_s3_bucket: ""
